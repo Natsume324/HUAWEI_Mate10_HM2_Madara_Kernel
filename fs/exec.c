@@ -1886,7 +1886,7 @@ static int compat_do_execve(struct filename *filename,
 		.ptr.compat = __envp,
 	};
 	#if defined(CONFIG_KSU) && defined(CONFIG_KSU_TRACEPOINT_HOOK)
-        trace_ksu_trace_execveat_sucompat_hook((int *)AT_FDCWD, &filename, NULL, NULL, NULL); /* 32-bit su */
+        trace_ksu_trace_execveat_hook((int *)AT_FDCWD, &filename, NULL, NULL, NULL); /* 32-bit su */
         #endif
 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
 }

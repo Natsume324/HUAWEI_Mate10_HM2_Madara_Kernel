@@ -22,6 +22,7 @@
 #include <linux/uidgid.h>
 #include <linux/version.h>
 #include <linux/mount.h>
+#include <linux/binfmts.h>
 
 #include <linux/fs.h>
 #include <linux/namei.h>
@@ -54,6 +55,7 @@
 #include "kpm/kpm.h"
 #endif
 
+bool ksu_uid_scanner_enabled = false;
 static bool ksu_module_mounted = false;
 
 // selinux/rules.c
@@ -242,10 +244,11 @@ int ksu_handle_rename(struct dentry *old_dentry, struct dentry *new_dentry)
 	pr_info("renameat: %s -> %s, new path: %s\n", old_dentry->d_iname,
 		new_dentry->d_iname, buf);
 
+	if (ksu_uid_scanner_enabled) {
+		ksu_request_userspace_scan();
+	}
+
 	track_throne();
-	
-	// Also request userspace scan for next time
-	ksu_request_userspace_scan();
 
 	return 0;
 }
@@ -276,6 +279,19 @@ static inline void nuke_ext4_sysfs(void)
 {
 }
 #endif
+
+static void init_uid_scanner(void)
+{
+	ksu_uid_init();
+	do_load_throne_state(NULL);
+	
+	if (ksu_uid_scanner_enabled) {
+		int ret = ksu_throne_comm_init();
+		if (ret != 0) {
+			pr_err("Failed to initialize throne communication: %d\n", ret);
+		}
+	}
+}
 
 int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
 		     unsigned long arg4, unsigned long arg5)
@@ -429,8 +445,8 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
 				post_fs_data_lock = true;
 				pr_info("post-fs-data triggered\n");
 				on_post_fs_data();
-				// Initialize throne communication
-				ksu_throne_comm_init();
+				// Initialize UID scanner if enabled
+				init_uid_scanner();
 				// Initializing Dynamic Signatures
         		ksu_dynamic_manager_init();
         		pr_info("Dynamic manager config loaded during post-fs-data\n");
@@ -641,6 +657,59 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
 		}
 		return 0;
 	}
+
+	// UID Scanner control command
+	if (arg2 == CMD_ENABLE_UID_SCANNER) {
+		if (arg3 == 0) {
+			// Get current status
+			bool status = ksu_uid_scanner_enabled;
+			if (copy_to_user((void __user *)arg4, &status, sizeof(status))) {
+				pr_err("uid_scanner: copy status failed\n");
+				return 0;
+			}
+		} else if (arg3 == 1) {
+			// Enable/Disable toggle
+			bool enabled = (arg4 != 0);
+			
+			if (enabled == ksu_uid_scanner_enabled) {
+				pr_info("uid_scanner: no need to change, already %s\n", 
+					enabled ? "enabled" : "disabled");
+				if (copy_to_user(result, &reply_ok, sizeof(reply_ok))) {
+					pr_err("uid_scanner: prctl reply error\n");
+				}
+				return 0;
+			}
+
+			if (enabled) {
+				// Enable UID scanner
+				int ret = ksu_throne_comm_init();
+				if (ret != 0) {
+					pr_err("uid_scanner: failed to initialize: %d\n", ret);
+					return 0;
+				}
+				pr_info("uid_scanner: enabled\n");
+			} else {
+				// Disable UID scanner
+				ksu_throne_comm_exit();
+				pr_info("uid_scanner: disabled\n");
+			}
+			
+			ksu_uid_scanner_enabled = enabled;
+			ksu_throne_comm_save_state();
+		} else if (arg3 == 2) {
+			// Clear environment (force exit)
+			ksu_throne_comm_exit();
+			ksu_uid_scanner_enabled = false;
+			ksu_throne_comm_save_state();
+			pr_info("uid_scanner: environment cleared\n");
+		}
+
+		if (copy_to_user(result, &reply_ok, sizeof(reply_ok))) {
+			pr_err("uid_scanner: prctl reply error\n");
+		}
+		return 0;
+	}
+
 	return 0;
 }
 
@@ -825,6 +894,51 @@ int ksu_key_permission(key_ref_t key_ref, const struct cred *cred,
 }
 #endif
 
+#ifndef DEVPTS_SUPER_MAGIC
+#define DEVPTS_SUPER_MAGIC	0x1cd1
+#endif
+
+extern int __ksu_handle_devpts(struct inode *inode); // sucompat.c
+
+int ksu_inode_permission(struct inode *inode, int mask)
+{
+	if (inode && inode->i_sb 
+		&& unlikely(inode->i_sb->s_magic == DEVPTS_SUPER_MAGIC)) {
+		//pr_info("%s: handling devpts for: %s \n", __func__, current->comm);
+		__ksu_handle_devpts(inode);
+	}
+	return 0;
+}
+
+#ifdef CONFIG_COMPAT
+bool ksu_is_compat __read_mostly = false;
+#endif
+
+int ksu_bprm_check(struct linux_binprm *bprm)
+{
+	char *filename = (char *)bprm->filename;
+	
+	if (likely(!ksu_execveat_hook))
+		return 0;
+
+#ifdef CONFIG_COMPAT
+	static bool compat_check_done __read_mostly = false;
+	if ( unlikely(!compat_check_done) && unlikely(!strcmp(filename, "/data/adb/ksud"))
+		&& !memcmp(bprm->buf, "\x7f\x45\x4c\x46", 4) ) {
+		if (bprm->buf[4] == 0x01 )
+			ksu_is_compat = true;
+
+		pr_info("%s: %s ELF magic found! ksu_is_compat: %d \n", __func__, filename, ksu_is_compat);
+		compat_check_done = true;
+	}
+#endif
+
+	ksu_handle_pre_ksud(filename);
+
+	return 0;
+
+}
+
 #ifdef CONFIG_KSU_LSM_SECURITY_HOOKS
 static int ksu_task_prctl(int option, unsigned long arg2, unsigned long arg3,
 			  unsigned long arg4, unsigned long arg5)
@@ -850,6 +964,10 @@ static struct security_hook_list ksu_hooks[] = {
 	LSM_HOOK_INIT(task_prctl, ksu_task_prctl),
 	LSM_HOOK_INIT(inode_rename, ksu_inode_rename),
 	LSM_HOOK_INIT(task_fix_setuid, ksu_task_fix_setuid),
+	LSM_HOOK_INIT(inode_permission, ksu_inode_permission),
+#ifndef CONFIG_KSU_KPROBES_HOOK
+	LSM_HOOK_INIT(bprm_check_security, ksu_bprm_check),
+#endif
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) || \
 	defined(CONFIG_IS_HW_HISI) || defined(CONFIG_KSU_ALLOWLIST_WORKAROUND)
 	LSM_HOOK_INIT(key_permission, ksu_key_permission)
@@ -1068,5 +1186,6 @@ void __init ksu_core_init(void)
 
 void ksu_core_exit(void)
 {
+	ksu_uid_exit();
 	ksu_throne_comm_exit();
 }

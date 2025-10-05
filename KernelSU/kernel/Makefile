@@ -3,7 +3,6 @@ kernelsu-objs += allowlist.o
 kernelsu-objs += dynamic_manager.o
 kernelsu-objs += apk_sign.o
 kernelsu-objs += sucompat.o
-kernelsu-objs += throne_tracker.o
 kernelsu-objs += core_hook.o
 kernelsu-objs += ksud.o
 kernelsu-objs += embed_ksud.o
@@ -12,6 +11,14 @@ kernelsu-objs += throne_comm.o
 
 ifeq ($(CONFIG_KSU_TRACEPOINT_HOOK), y)
 kernelsu-objs += ksu_trace.o
+endif
+
+ifeq ($(CONFIG_KSU_THRONE_TRACKER_LEGACY),y)
+$(info -- KernelSU/compat: using legacy throne tracker)
+kernelsu-objs += throne_tracker_legacy.o
+else
+$(info -- KernelSU/compat: using new throne tracker)
+kernelsu-objs += throne_tracker.o
 endif
 
 kernelsu-objs += selinux/selinux.o
@@ -29,7 +36,7 @@ obj-$(CONFIG_KPM) += kpm/
 REPO_OWNER := SukiSU-Ultra
 REPO_NAME := SukiSU-Ultra
 REPO_BRANCH := main
-KSU_VERSION_API := 3.1.9
+KSU_VERSION_API := 3.2.0
 
 GIT_BIN := /usr/bin/env PATH="$$PATH":/usr/bin:/usr/local/bin git
 CURL_BIN := /usr/bin/env PATH="$$PATH":/usr/bin:/usr/local/bin curl
@@ -105,7 +112,6 @@ ifeq ($(shell grep "ssize_t kernel_write" $(srctree)/fs/read_write.c | grep -q "
 ccflags-y += -DKSU_OPTIONAL_KERNEL_WRITE
 endif
 ifeq ($(shell grep -q "inode_security_struct\s\+\*selinux_inode" $(srctree)/security/selinux/include/objsec.h; echo $$?),0)
-$(info -- KernelSU: kernel has selinux_inode.)
 ccflags-y += -DKSU_OPTIONAL_SELINUX_INODE
 endif
 ifeq ($(shell grep -q "int\s\+path_umount" $(srctree)/fs/namespace.c; echo $$?),0)
@@ -119,6 +125,17 @@ endif
 # Samsung SELinux Porting
 ifeq ($(shell grep -q "SEC_SELINUX_PORTING_COMMON" $(srctree)/security/selinux/avc.c; echo $$?),0)
 ccflags-y += -DSAMSUNG_SELINUX_PORTING
+endif
+
+# Check new vfs_getattr()
+ifeq ($(shell grep -A1 "^int vfs_getattr" $(srctree)/fs/stat.c | grep -q "query_flags" ; echo $$?),0)
+$(info -- KernelSU/compat: new vfs_getattr() found)
+ccflags-y += -DKSU_HAS_NEW_VFS_GETATTR
+endif
+
+# Function proc_ops check
+ifeq ($(shell grep -q "struct proc_ops " $(srctree)/include/linux/proc_fs.h; echo $$?),0)
+ccflags-y += -DKSU_COMPAT_HAS_PROC_OPS
 endif
 
 # Custom Signs

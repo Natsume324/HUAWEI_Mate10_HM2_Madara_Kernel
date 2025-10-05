@@ -15,6 +15,15 @@ config KSU_DEBUG
 	help
 	  Enable KernelSU debug mode.
 
+config KSU_THRONE_TRACKER_LEGACY
+	bool "Use legacy throne tracker (packages.list scanning)"
+	depends on KSU
+	default n
+	help
+	  Use legacy throne tracker that scans packages.list for app UIDs.
+	  This is kept for Ultra-Legacy Linux 4.4-3.X kernels which are prone to deadlocks.
+	  Enable this if default scanning deadlocks/crashes on you.
+
 config KSU_ALLOWLIST_WORKAROUND
 	bool "KernelSU Session init keyring workaround"
 	depends on KSU
