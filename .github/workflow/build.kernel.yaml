@@ -1,1 +1,94 @@
+name: Build Kirin 970 Kernel
 
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04 # 保持使用 20.04 以兼容 Python 2.7
+
+    steps:
+    - name: Checkout Kernel Source
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+
+    - name: Install Dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y bc bison build-essential ccache curl flex g++-multilib \
+        gcc-multilib git git-lfs gnupg gperf imagemagick lib32ncurses5-dev \
+        lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5 \
+        libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop \
+        pngcrush rsync microcom schedtool squashfs-tools xsltproc zip zlib1g-dev \
+        adb fastboot
+        
+        # 强制安装 Python 2.7 并链接为 python
+        sudo apt install -y python2.7
+        sudo ln -sf /usr/bin/python2.7 /usr/bin/python
+
+    - name: Setup ccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ${{ runner.os }}-ccache-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-
+
+    - name: Download Toolchains
+      run: |
+        mkdir -p $GITHUB_WORKSPACE/toolchains
+        cd $GITHUB_WORKSPACE/toolchains
+        # 下载 android10-release 分支的 Clang 和 GCC
+        git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b android10-release --depth=1 clang-res
+        git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android10-release --depth=1 gcc
+
+    - name: Setup Environment
+      run: |
+        CLANG_DIR=$GITHUB_WORKSPACE/toolchains/clang-res/clang-r353983c
+        GCC_DIR=$GITHUB_WORKSPACE/toolchains/gcc
+        echo "PATH=$CLANG_DIR/bin:$GCC_DIR/bin:$PATH" >> $GITHUB_ENV
+        echo "CLANG_PREBUILTS_PATH=$CLANG_DIR" >> $GITHUB_ENV
+        echo "LD_LIBRARY_PATH=$CLANG_DIR/lib64:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+        echo "CROSS_COMPILE=aarch64-linux-android-" >> $GITHUB_ENV
+        echo "ARCH=arm64" >> $GITHUB_ENV
+        echo "CC=clang" >> $GITHUB_ENV
+        echo "USE_CCACHE=1" >> $GITHUB_ENV
+        ccache -M 5G
+
+    - name: Run Kernel Build
+      run: |
+        mkdir -p out
+        make ARCH=arm64 O=out CC="ccache clang" merge_kirin970_defconfig
+        make ARCH=arm64 O=out CC="ccache clang" -j$(nproc --all) 2>&1 | tee build.log
+
+    - name: Pack Kernel Images
+      run: |
+        # 准备 Image.gz 到 tools 目录
+        cp out/arch/arm64/boot/Image.gz tools/
+        cd tools
+        
+        # 赋予可执行权限
+        chmod +x mkbootimg pack_kernerimage_cmd.sh
+        
+        # 1. 打包 Enforcing 版本 (假设脚本默认就是 enforcing)
+        echo "Packing Enforcing kernel..."
+        ./pack_kernerimage_cmd.sh
+        mv kernel.img ../kernel-enforcing.img
+        
+        # 2. 修改脚本生成 Permissive 版本
+        # 使用 sed 将脚本里的 enforcing 替换为 permissive
+        echo "Packing Permissive kernel..."
+        sed -i 's/androidboot.selinux=enforcing/androidboot.selinux=permissive/g' pack_kernerimage_cmd.sh
+        ./pack_kernerimage_cmd.sh
+        mv kernel.img ../kernel-permissive.img
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: Kirin970-Output
+        path: |
+          kernel-enforcing.img
+          kernel-permissive.img
+          out/arch/arm64/boot/Image.gz
+          build.log
