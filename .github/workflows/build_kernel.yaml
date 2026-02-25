@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04 # 保持使用 20.04 以兼容 Python 2.7
+    runs-on: ubuntu-22.04 # 保持使用 20.04 以兼容 Python 2.7
 
     steps:
     - name: Checkout Kernel Source
