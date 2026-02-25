@@ -48,8 +48,8 @@ jobs:
         CLANG_DIR=$GITHUB_WORKSPACE/toolchains/clang-res/clang-r353983c
         GCC_DIR=$GITHUB_WORKSPACE/toolchains/gcc
         echo "PATH=$CLANG_DIR/bin:$GCC_DIR/bin:$PATH" >> $GITHUB_ENV
-        echo "CLANG_PREBUILTS_PATH=$CLANG_DIR" >> $GITHUB_ENV
-        echo "LD_LIBRARY_PATH=$CLANG_DIR/lib64:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+        echo "CLANG_PREBUILTS_PATH=$CLANG_DIR/" >> $GITHUB_ENV
+        echo "LD_LIBRARY_PATH=$CLANG_DIR/lib64/:$LD_LIBRARY_PATH" >> $GITHUB_ENV
         echo "CROSS_COMPILE=aarch64-linux-android-" >> $GITHUB_ENV
         echo "ARCH=arm64" >> $GITHUB_ENV
         echo "CC=clang" >> $GITHUB_ENV
