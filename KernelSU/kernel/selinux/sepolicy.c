@@ -671,7 +671,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
 		return false;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0) || defined(KSU_TYPE_VAL_TO_STRUCT)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 	struct ebitmap *new_type_attr_map_array =
 		ksu_kvrealloc(db->type_attr_map_array,
 			    value * sizeof(struct ebitmap),
@@ -969,7 +969,7 @@ static bool set_type_state(struct policydb *db, const char *type_name,
 static void add_typeattribute_raw(struct policydb *db, struct type_datum *type,
 				  struct type_datum *attr)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0) || defined(KSU_TYPE_VAL_TO_STRUCT) || defined(KSU_TYPE_VAL_TO_STRUCT_ARRAY)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
 	struct ebitmap *sattr = &db->type_attr_map_array[type->value - 1];
 #elif defined(CONFIG_IS_HW_HISI) && defined(CONFIG_HISI_PMALLOC)
 	/*
