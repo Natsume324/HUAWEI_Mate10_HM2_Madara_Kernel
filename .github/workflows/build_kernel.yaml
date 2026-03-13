@@ -54,6 +54,8 @@ jobs:
         echo "ARCH=arm64" >> $GITHUB_ENV
         echo "CC=clang" >> $GITHUB_ENV
         echo "USE_CCACHE=1" >> $GITHUB_ENV
+        sed -i 's/CONFIG_LTO=y/# CONFIG_LTO is not set/' arch/arm64/configs/merge_kirin970_defconfig
+        sed -i 's/CONFIG_LTO_CLANG=y/# CONFIG_LTO_CLANG is not set/' arch/arm64/configs/merge_kirin970_defconfig
         ccache -M 5G
 
     - name: Run Kernel Build
