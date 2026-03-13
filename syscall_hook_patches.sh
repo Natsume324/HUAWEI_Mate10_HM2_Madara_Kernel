@@ -19,7 +19,7 @@ patch_files=(
 )
 
 PATCH_LEVEL="1.9"
-KERNEL_VERSION=$(head -n 3 Makefile | grep -E 'VERSION|PATCHLEVEL' | awk '{print $3}' | paste -sd '.')
+KERNEL_VERSION=$(head -n 20 Makefile | grep -E 'VERSION|PATCHLEVEL' | awk '{print $3}' | paste -sd '.')
 FIRST_VERSION=$(echo "$KERNEL_VERSION" | awk -F '.' '{print $1}')
 SECOND_VERSION=$(echo "$KERNEL_VERSION" | awk -F '.' '{print $2}')
 
