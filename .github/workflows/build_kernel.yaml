@@ -54,6 +54,8 @@ jobs:
         echo "ARCH=arm64" >> $GITHUB_ENV
         echo "CC=clang" >> $GITHUB_ENV
         echo "USE_CCACHE=1" >> $GITHUB_ENV
+        sed -i 's/CONFIG_LTO=y/# CONFIG_LTO is not set/' arch/arm64/configs/merge_kirin970_defconfig
+        sed -i 's/CONFIG_LTO_CLANG=y/# CONFIG_LTO_CLANG is not set/' arch/arm64/configs/merge_kirin970_defconfig
         ccache -M 5G
 
     - name: Run Kernel Build
@@ -63,32 +65,36 @@ jobs:
         make ARCH=arm64 O=out CC="ccache clang" -j$(nproc --all) 2>&1 | tee build.log
 
     - name: Pack Kernel Images
+      if: success()  # 仅在构建成功后运行
       run: |
         # 准备 Image.gz 到 tools 目录
         cp out/arch/arm64/boot/Image.gz tools/
         cd tools
         
-        # 赋予可执行权限
         chmod +x mkbootimg pack_kernerimage_cmd.sh
         
-        # 1. 打包 Enforcing 版本 (假设脚本默认就是 enforcing)
-        echo "Packing Enforcing kernel..."
+        # 打包 Enforcing 版本
         ./pack_kernerimage_cmd.sh
         mv kernel.img ../kernel-enforcing.img
         
-        # 2. 修改脚本生成 Permissive 版本
-        # 使用 sed 将脚本里的 enforcing 替换为 permissive
-        echo "Packing Permissive kernel..."
+        # 修改脚本打包 Permissive 版本
         sed -i 's/androidboot.selinux=enforcing/androidboot.selinux=permissive/g' pack_kernerimage_cmd.sh
         ./pack_kernerimage_cmd.sh
         mv kernel.img ../kernel-permissive.img
 
-    - name: Upload Artifacts
+    - name: Upload Build Log (always)
+      if: always()  # 无论成功失败都上传日志
       uses: actions/upload-artifact@v4
       with:
-        name: Kirin970-Output
+        name: Build-Log
+        path: build.log
+
+    - name: Upload Kernel Images (on success)
+      if: success()  # 仅当构建成功时上传镜像
+      uses: actions/upload-artifact@v4
+      with:
+        name: Kirin970-Kernel-Images
         path: |
           kernel-enforcing.img
           kernel-permissive.img
           out/arch/arm64/boot/Image.gz
-          build.log
